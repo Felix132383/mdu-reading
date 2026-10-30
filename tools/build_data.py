@@ -1,14 +1,29 @@
 # -*- coding: utf-8 -*-
-"""把纯文本小说转换成站点可直接加载的分章数据。
+"""把纯文本小说转换成站点可直接加载的分章数据（支持多本书）。
 
-输入：纯文本小说（UTF-8 / 带 BOM 均可）
+书单配置：books/books.json
+   [
+     {
+       "id": "gu-zhen-ren",                 必填，英文/数字/连字符，决定链接 #/b/<id>/<章>
+       "title": "蛊真人",                   必填，书名
+       "author": "蛊真人",                  可选，作者
+       "tags": ["仙侠", "完本"],            可选，书架上的标签
+       "note": "错别字校对 5.0 版",         可选，副标题（卡片上的一行小字）
+       "intro": "一句话简介",               可选，书籍简介
+       "source": "books/xxx.txt",           必填，原文路径（相对仓库根目录，也可写绝对路径）
+       "download": "books/xxx.txt"          可选，供“下载 TXT”使用的文件；
+                                                 与 source 相同 → 不复制；不同 → 自动复制一份
+     },
+     ...
+   ]
+
 输出：
-  data/catalog.js       —— window.MD_PUBLIC_BOOKS，含书名、简介、章节目录
-  data/gu/c/NNNN.js     —— 每章正文，格式 __MDC("<id>", ["段落", ...])
-  data/gu/<raw>.txt     —— 原文副本（供下载）
+  data/catalog.js          —— window.MD_PUBLIC_BOOKS，包含所有公开书的目录
+  data/<id>/c/NNNN.js      —— 每章正文，格式 __MDC("<chapter-id>", ["段落", ...])
 
 用法：
-  python tools/build_data.py "源文件.txt"
+  python tools/build_data.py            # 重建全部
+  python tools/build_data.py <id> ...   # 只重写指定书的章节文件（catalog 仍会全量重建）
 """
 import json
 import os
@@ -17,20 +32,19 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = sys.argv[1] if len(sys.argv) > 1 else r"D:\mdu-reading\蛊真人无删减错别字修正5.0.txt"
-
-BOOK_ID = "gu-zhen-ren"
-BOOK_TITLE = "蛊真人"
-BOOK_AUTHOR = "蛊真人"
-BOOK_TAGS = ["仙侠", "黑暗流", "完本"]
-BOOK_NOTE = "错别字校对 5.0 版 · 章节已重排"
+CONFIG = os.path.join(ROOT, "books", "books.json")
 
 RE_VOLUME = re.compile(r"^第\s*([一二三四五六七八九十百零两0-9]{1,4})\s*卷$")
-RE_SECTION = re.compile(r"^第\s*([一二三四五六七八九十百千万零两0-9]{1,6})\s*[节回]\s*[：:、·.]?\s*(.*)$")
+RE_SECTION = re.compile(r"^第\s*([一二三四五六七八九十百千万零两0-9]{1,6})\s*[节回章]\s*[：:、·.]?\s*(.*)$")
 RE_EXTRA = re.compile(r"^(番外|序章|序言|楔子|引子|尾声|终章|后记|外传|附录)")
 RE_PREFACE = re.compile(r"^(序|自序|前言|引子|楔子|写在前面)[：:，,\s]")
+RE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # 句子终止符：不以这些结尾的行视为被折行的续行，与下一行合并
 END_CHARS = "。！？…”’」』）】》!?."
+
+
+class BookError(Exception):
+    pass
 
 
 def read_text(path):
@@ -77,29 +91,26 @@ def is_heading(line):
     return bool(RE_VOLUME.match(line) or RE_SECTION.match(line) or RE_EXTRA.match(line))
 
 
-def main():
-    t0 = time.time()
-    text = read_text(SRC)
+def parse_book(text):
+    """返回 (chapters, volumes, notice)。chapters: [{title, paras, vol}]"""
     lines = norm_lines(text)
-    print("源文件行数:", len(lines))
 
     # ---- 定位所有标题行 ----
     heads = []
     for i, line in enumerate(lines):
         if not line or not is_heading(line):
             continue
-        m = RE_SECTION.match(line)
-        tag = "sec" if (m and not RE_EXTRA.match(line)) else ""
         vm = RE_VOLUME.match(line)
         if vm:
-            # 卷名可能写在同一行，也可能在下一行（本书是下一行）
+            # 卷名可能写在同一行，也可能在下一行
             name = line[vm.end():].strip()
             if not name and i + 1 < len(lines) and lines[i + 1] and not is_heading(lines[i + 1]):
                 name = lines[i + 1]
-            heads.append({"i": i, "kind": "vol", "title": (line + (" " + name if name else "")).strip(),
+            heads.append({"i": i, "kind": "vol",
+                          "title": (line + (" " + name if name else "")).strip(),
                           "skip": 1 if (name and name != line) else 0})
             continue
-        if tag:
+        if RE_SECTION.match(line) and not RE_EXTRA.match(line) and len(line) <= 40:
             heads.append({"i": i, "kind": "sec", "title": line, "skip": 0})
             continue
         heads.append({"i": i, "kind": "extra", "title": line, "skip": 0})
@@ -110,13 +121,11 @@ def main():
             h["i"] += 1
 
     # ---- 前言部分（第一处标题之前的内容）----
-    chapters = []          # [{title, paras, vol}]
-    volumes = []           # [{title, start}]
+    chapters = []
+    volumes = []
 
     first = heads[0]["i"] if heads else len(lines)
     front_joined = [l for l in lines[:first] if l]
-    notice = []
-    # 前几行：书名 / 作者 / 校对说明 … / 简介 / 序
     intro_idx = pref_idx = None
     for k, l in enumerate(front_joined):
         if intro_idx is None and l in ("简介", "内容简介", "作品简介"):
@@ -159,8 +168,7 @@ def main():
         if h["kind"] == "vol" and len(chunk) > 1 and chunk[1] and \
                 chunk[1] in h["title"] and chunk[1] != chunk[0]:
             drop = 2
-        body = [l for l in chunk[drop:] if l]
-        body_chunks.append((h, body))
+        body_chunks.append((h, [l for l in chunk[drop:] if l]))
 
     cur_vol = -1
     for h, body in body_chunks:
@@ -170,52 +178,124 @@ def main():
             continue
         if not body:
             continue
-        title = h["title"]
-        chapters.append({"title": title, "paras": merge_paragraphs(body), "vol": cur_vol})
+        chapters.append({"title": h["title"], "paras": merge_paragraphs(body), "vol": cur_vol})
 
-    # ---- 报告 ----
-    words = sum(len("".join(c["paras"])) for c in chapters)
-    print("章节数:", len(chapters), "总字数:", words)
-    print("卷:", [v["title"] for v in volumes])
-    for vi, v in enumerate(volumes):
-        nxt = volumes[vi + 1]["start"] if vi + 1 < len(volumes) else len(chapters)
-        print("  %-12s 章节 %d" % (v["title"], nxt - v["start"]))
-    print("首章:", chapters[0]["title"])
-    print("末章:", chapters[-1]["title"])
+    return chapters, volumes, "　".join(notice).strip()
 
-    # ---- 写数据 ----
-    out_c = os.path.join(ROOT, "data", "gu", "c")
-    os.makedirs(out_c, exist_ok=True)
-    for old in os.listdir(out_c):
-        if old.endswith(".js"):
-            os.remove(os.path.join(out_c, old))
+
+def rel(path):
+    """统一成 / 分隔的相对路径（用于写进 catalog 的 URL）"""
+    path = path.replace("\\", "/")
+    return path
+
+
+def resolve(path):
+    return path if os.path.isabs(path) else os.path.join(ROOT, path)
+
+
+def load_config():
+    if not os.path.exists(CONFIG):
+        raise BookError("找不到书单配置：%s" % CONFIG)
+    with open(CONFIG, encoding="utf-8-sig") as f:
+        cfg = json.load(f)
+    if not isinstance(cfg, list) or not cfg:
+        raise BookError("books/books.json 需要是一个非空数组，例如 [ { \"id\": \"...\", ... } ]")
+
+    seen = set()
+    for i, b in enumerate(cfg):
+        for field in ("id", "title", "source"):
+            if not b.get(field):
+                raise BookError("第 %d 条书单缺少字段：%s" % (i + 1, field))
+        if not RE_ID.match(b["id"]):
+            raise BookError("id 只能用小写字母、数字和连字符：%s（例：dou-po-cang-qiong）" % b["id"])
+        if b["id"] in seen:
+            raise BookError("id 重复：%s" % b["id"])
+        seen.add(b["id"])
+        if not os.path.exists(resolve(b["source"])):
+            raise BookError("《%s》的原文不存在：%s" % (b["title"], b["source"]))
+    return cfg
+
+
+def build_book(b, write_files=True):
+    src = resolve(b["source"])
+    text = read_text(src)
+    chapters, volumes, notice = parse_book(text)
+    if not chapters:
+        raise BookError("《%s》没有解析出任何章节" % b["title"])
+
+    out_rel = b.get("dir") or os.path.join("data", b["id"], "c")
+    out_dir = os.path.join(ROOT, out_rel)
+    os.makedirs(out_dir, exist_ok=True)
 
     index = []
     for n, c in enumerate(chapters):
         fid = "%04d" % (n + 1)
         paras = [p for p in c["paras"] if p.strip()]
-        payload = "__MDC(%s,%s);\n" % (json.dumps(fid), json.dumps(paras, ensure_ascii=False))
-        with open(os.path.join(out_c, fid + ".js"), "w", encoding="utf-8", newline="\n") as f:
-            f.write(payload)
+        if write_files:
+            payload = "__MDC(%s,%s);\n" % (json.dumps(fid), json.dumps(paras, ensure_ascii=False))
+            with open(os.path.join(out_dir, fid + ".js"), "w", encoding="utf-8", newline="\n") as f:
+                f.write(payload)
         index.append({"t": c["title"], "f": fid, "w": sum(len(p) for p in paras), "v": c["vol"]})
 
-    catalog = [{
-        "id": BOOK_ID,
-        "title": BOOK_TITLE,
-        "author": BOOK_AUTHOR,
-        "tags": BOOK_TAGS,
-        "note": BOOK_NOTE,
-        "notice": "　".join(notice).strip(),
-        "intro": "人是万物之灵，蛊是天地真精。三观不正，魔头重生。一个穿越者不断重生的故事，"
-                 "一个养蛊、炼蛊、用蛊的奇特世界，还有一个纵情纵横的绝世大魔头。",
+    # 清掉旧的多余章节文件
+    keep = set(x["f"] + ".js" for x in index)
+    for old in os.listdir(out_dir):
+        if old.endswith(".js") and old not in keep:
+            os.remove(os.path.join(out_dir, old))
+
+    # 原文副本（供“下载 TXT”）
+    txt_url = ""
+    download = b.get("download") or b["source"]
+    dl_path = resolve(download)
+    if os.path.abspath(dl_path) != os.path.abspath(src):
+        os.makedirs(os.path.dirname(dl_path), exist_ok=True)
+        with open(src, "rb") as s, open(dl_path, "wb") as d:
+            d.write(s.read())
+    if os.path.exists(dl_path) and os.path.abspath(dl_path).startswith(ROOT):
+        txt_url = rel(os.path.relpath(dl_path, ROOT))
+
+    entry = {
+        "id": b["id"],
+        "title": b["title"],
+        "author": b.get("author", ""),
+        "tags": b.get("tags", []),
+        "note": b.get("note", ""),
+        "notice": notice,
+        "intro": b.get("intro", ""),
         "chapters": index,
         "volumes": volumes,
-        "words": words,
-        "dir": "data/gu/c/",
-        "txt": "data/gu/gu-zhen-ren.txt",
+        "words": sum(c["w"] for c in index),
+        "dir": rel(out_rel) + "/",
+        "txt": txt_url,
         "public": True,
         "updatedAt": 0,
-    }]
+    }
+    return entry
+
+
+def main():
+    t0 = time.time()
+    only = set(sys.argv[1:])
+    try:
+        cfg = load_config()
+    except BookError as e:
+        print("配置错误：", e)
+        sys.exit(1)
+
+    catalog = []
+    for b in cfg:
+        try:
+            entry = build_book(b, write_files=(not only or b["id"] in only))
+        except BookError as e:
+            print("跳过《%s》：%s" % (b.get("title", "?"), e))
+            continue
+        catalog.append(entry)
+        print("✓ %-14s %-10s %5d 章  %9d 字  %2d 卷" % (
+            entry["id"], entry["title"], len(entry["chapters"]), entry["words"], len(entry["volumes"])))
+
+    if not catalog:
+        print("没有任何书被生成，已中止。")
+        sys.exit(1)
 
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     with open(os.path.join(ROOT, "data", "catalog.js"), "w", encoding="utf-8", newline="\n") as f:
@@ -224,13 +304,9 @@ def main():
         f.write(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")))
         f.write(";\n")
 
-    # 原文副本
-    dst = os.path.join(ROOT, "data", "gu", "gu-zhen-ren.txt")
-    with open(SRC, "rb") as src, open(dst, "wb") as o:
-        o.write(src.read())
-
-    print("输出目录:", out_c)
-    print("耗时 %.1fs" % (time.time() - t0))
+    print("\n共 %d 本公开书，总 %d 字，耗时 %.1fs" % (
+        len(catalog), sum(b["words"] for b in catalog), time.time() - t0))
+    print("下一步：git add -A && git commit -m \"新增书籍\" && git push（Pages 会自动重建，约 1 分钟）")
 
 
 if __name__ == "__main__":

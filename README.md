@@ -20,11 +20,70 @@
 index.html            页面骨架
 assets/style.css      样式（含三套主题与响应式）
 assets/app.js         应用逻辑（书架 / 阅读器 / 写作 / 导入导出）
+books/books.json      ★ 公开书单配置（加书只改这里）
+books/*.txt           新书的原文（放在这里，随仓库一起发布）
 data/catalog.js       公开书架目录（书名、简介、章节索引），由脚本生成
-data/gu/c/0001.js…    分章正文，每章一个脚本文件，按需加载
-data/gu/gu-zhen-ren.txt  原文副本（下载用）
+data/<id>/c/0001.js…  分章正文，每章一个脚本文件，按需加载
+data/gu/gu-zhen-ren.txt  《蛊真人》原文副本（下载用）
 tools/build_data.py   把纯文本小说转换成上面的数据
 ```
+
+## 加一本新书到公开书架
+
+**第 1 步：把小说 txt 放进 `books/` 目录**（文件名随意，建议和书同名）
+
+章节标题单独占一行即可被识别，这些写法都支持：
+
+```
+第一章 开端         第12章 xxx        第十二回 xxx
+第二卷              第一节 xxx        番外篇 某篇
+序章 / 序言 / 楔子 / 引子 / 前言 / 尾声 / 终章 / 后记 / Chapter 1
+```
+
+编码 UTF-8 或 GBK/GB18030 都行（脚本会自动识别）。标题行建议不超过 36 字、不以句号结尾，以免被当成正文。
+
+**第 2 步：在 `books/books.json` 里加一条记录**
+
+```json
+{
+  "id": "dou-po-cang-qiong",
+  "title": "斗破苍穹",
+  "author": "天蚕土豆",
+  "tags": ["玄幻", "完本"],
+  "note": "精校版",
+  "source": "books/斗破苍穹.txt",
+  "download": "books/斗破苍穹.txt"
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 必填，小写字母/数字/连字符，决定链接 `#/b/<id>/<章>`，不要和已有书重复 |
+| `title` / `author` / `tags` / `note` | 书架卡片上显示的内容 |
+| `source` | 必填，原文路径（相对仓库根目录，也可写绝对路径） |
+| `download` | 可选，"下载 TXT" 指向的文件；和 `source` 相同则不复制，不同则自动复制一份 |
+| `dir` | 可选，章节输出目录，默认 `data/<id>/c`（一般不用写） |
+
+**第 3 步：重建数据**
+
+```bash
+python tools/build_data.py
+```
+
+终端会打印每本书的章节数/字数，并重写 `data/catalog.js` 与 `data/<id>/c/*.js`。
+重复运行是幂等的（内容没变时 git 不会产生改动），旧的多余章节文件会自动清理。
+
+**第 4 步：提交并推送**
+
+```bash
+git add -A
+git commit -m "新增书籍：斗破苍穹"
+git push
+```
+
+推送后 GitHub Pages 会自动重新构建（约 1 分钟）。刷新页面若没看到新书，按 `Ctrl+F5` 强刷一下（`catalog.js` 被浏览器缓存了）。
+
+> 删除一本书：从 `books.json` 里删掉那条记录 → 删掉 `data/<id>/` 目录 → 重新运行脚本 → 提交推送。
 
 ## 本地预览
 
@@ -34,18 +93,6 @@ python -m http.server 8787
 ```
 
 > 直接双击 `index.html` 也可以打开（数据用 `<script>` 加载，不依赖 fetch），但用 HTTP 服务更接近线上环境。
-
-## 新增一本公开书
-
-1. 把小说保存为 UTF-8 纯文本，章节标题单独成行（`第一章 xxx`、`第 12 节`、`番外` 等均可识别）。
-2. 修改 `tools/build_data.py` 顶部的书籍常量（`BOOK_ID` / `BOOK_TITLE` / `BOOK_AUTHOR` / 输出目录），或把它改造成支持多本。
-3. 运行：
-
-```bash
-python tools/build_data.py "你的小说.txt"
-```
-
-4. 脚本会重新生成 `data/catalog.js` 与 `data/gu/c/*.js`（含章节切分、分卷、字数统计）。
 
 ## 部署
 
