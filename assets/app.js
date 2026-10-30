@@ -6,6 +6,9 @@
 (function () {
   'use strict';
 
+  /* 版本号：每次发布与 index.html 里的 window.MD_BUILD 保持一致 */
+  const BUILD = '20261031-2';
+
   /* ---------------------------------------------------------------- 基础工具 */
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.prototype.slice.call((root || document).querySelectorAll(sel));
@@ -106,12 +109,17 @@
   })();
 
   /* --------------------------------------------------------- 阅读进度存储 */
+  // v2：旧版本存在「串书」bug，写进来的进度不可信，这里按版本号整体作废一次
+  const PROG_VERSION = 2;
   const progAll = store.get('modu-progress', {});
-  function progressOf(id) { return progAll[id] || null; }
+  function progressOf(id) {
+    const p = progAll[id];
+    return p && p.v === PROG_VERSION ? p : null;
+  }
   const saveProg = debounce(() => store.set('modu-progress', progAll), 400);
   function setProgress(id, ci, ratio) {
-    progAll[id] = { ci: ci, ratio: clamp(ratio || 0, 0, 1), at: Date.now() };
-    store.set('modu-last', { id: id, ci: ci, at: Date.now() });
+    progAll[id] = { ci: ci, ratio: clamp(ratio || 0, 0, 1), at: Date.now(), v: PROG_VERSION };
+    store.set('modu-last', { id: id, ci: ci, at: Date.now(), v: PROG_VERSION });
     saveProg();
   }
   function bookPercent(book) {
@@ -316,7 +324,8 @@
 
     const totalWords = state.publicBooks.reduce((s, b) => s + (b.words || 0), 0);
     $('#footStats').textContent = `公开 ${state.publicBooks.length} 本 · ${fmt(totalWords)}字`;
-    $('#footDate').textContent = '更新于 ' + new Date(document.lastModified || Date.now()).toLocaleDateString('zh-CN');
+    $('#footDate').textContent = '更新于 ' + new Date(document.lastModified || Date.now()).toLocaleDateString('zh-CN') +
+      ' · v' + BUILD;
 
     // 继续阅读按钮
     const last = store.get('modu-last', null);
@@ -407,6 +416,7 @@
     idx = clamp(idx, 0, book.chapters.length - 1);
     const ratio = (chapterIdx == null && p && p.ci === idx) ? (p.ratio || 0) : 0;
     await showChapter(idx, ratio);
+    if (chapterIdx == null && idx > 0) toast(`已从第 ${idx + 1} 章继续阅读`);
     setHash('#/b/' + encodeURIComponent(book.id) + '/' + (idx + 1), true);
   }
 
@@ -528,13 +538,22 @@
     saveProgressSoon();
   };
 
-  const saveProgressSoon = debounce(() => {
+  // 记录进度时把「哪本书 + 第几章」在调用瞬间就固定下来，
+  // 避免 320ms 内切到另一本书时，把上一本的章节号写进新书（会导致下次打开跳到奇怪的位置）
+  let progressTimer = null;
+  function saveProgressSoon() {
     const book = state.reader.book;
     if (!book || document.body.dataset.view !== 'reader') return;
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    const ratio = max > 0 ? clamp(window.scrollY / max, 0, 1) : 0;
-    setProgress(book.id, state.reader.idx, ratio);
-  }, 320);
+    const id = book.id;
+    const ci = state.reader.idx;
+    clearTimeout(progressTimer);
+    progressTimer = setTimeout(() => {
+      if (document.body.dataset.view !== 'reader') return;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const ratio = max > 0 ? clamp(window.scrollY / max, 0, 1) : 0;
+      setProgress(id, ci, ratio);
+    }, 320);
+  }
 
   function gotoChapter(i) {
     const book = state.reader.book;
@@ -1019,6 +1038,12 @@ document.addEventListener('keydown', function(e){ if(e.key==='ArrowLeft')go(i-1)
   async function init() {
     if (started) return;
     started = true;
+
+    // 页面 HTML 比脚本新 → 说明浏览器缓存了旧 app.js，直接提示刷新
+    if (window.MD_BUILD && window.MD_BUILD !== BUILD) {
+      const el = document.getElementById('stale');
+      if (el) el.hidden = false;
+    }
     // 首次访问跟随系统主题
     if (!store.get('modu-settings', null) && window.matchMedia &&
         window.matchMedia('(prefers-color-scheme: dark)').matches) {

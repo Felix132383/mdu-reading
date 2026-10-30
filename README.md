@@ -112,6 +112,16 @@ python -m http.server 8787
 站点是纯静态文件，推到 GitHub 仓库后开启 **Settings → Pages**（分支 `main`，目录 `/`）即可。
 仓库里的 `.nojekyll` 用于关闭 GitHub Pages 的 Jekyll 处理，保证文件名与目录原样发布。
 
+### 发布时记得改版本号（避免浏览器用旧脚本）
+
+GitHub Pages 给静态资源的缓存是 `max-age=600`，如果只改 `app.js` 而 URL 不变，访问者可能十几分钟内仍在跑旧代码。所以每次发布要同步改三处同名字符串（例如 `20261031-2` → `20261101-1`）：
+
+1. `index.html` 里 `<link href="assets/style.css?v=…">`
+2. `index.html` 里 `window.MD_BUILD = '…'` 与两个 `<script src="…?v=…">`
+3. `assets/app.js` 顶部的 `const BUILD = '…'`
+
+`window.MD_BUILD` 与 `BUILD` 不一致时，页面底部会自动弹出「本站已更新，请刷新」的提示条，用户不会再默默读到旧逻辑。
+
 ## 版权
 
 书架中的书籍内容版权归原作者及出版方所有，本项目仅用于个人学习与技术交流，请勿用于商业用途。

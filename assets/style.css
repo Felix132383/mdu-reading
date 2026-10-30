@@ -595,6 +595,26 @@ body.toc-hidden .toc { display: none; }
 .title-input:focus { border-bottom-color: var(--accent); }
 .stat { font-size: 12px; color: var(--sub); margin-right: 6px; white-space: nowrap; }
 
+/* 旧脚本提示条 */
+.stale {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 95;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  font-size: 13px;
+  color: #fff;
+  background: #b23b2e;
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, .2);
+}
+.stale[hidden] { display: none; }
+.stale .btn { background: #fff; border-color: #fff; color: #b23b2e; font-weight: 600; }
+
 .paper {
   display: flex;
   flex-direction: column;
