@@ -1,0 +1,49 @@
+name: 自动上架
+
+# 把 txt / md / docx / epub 放到 books/ 目录（网页上传或 git push 都行），
+# 这里会自动解析、生成章节数据并提交，随后 GitHub Pages 自动发布。
+on:
+  push:
+    paths:
+      - "books/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # 机器人自己的提交不再触发，避免死循环
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装解析依赖
+        run: pip install --quiet python-docx lxml
+
+      - name: 解析书籍并生成数据
+        run: python tools/build_data.py
+
+      - name: 提交结果
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "没有需要提交的改动"
+            exit 0
+          fi
+          NAMES=$(git diff --cached --name-only --diff-filter=A -- 'books/*' | head -3 | tr '\n' ' ')
+          git commit -m "自动上架：${NAMES:-重建书籍数据}"
+          git push

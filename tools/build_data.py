@@ -96,8 +96,36 @@ def merge_paragraphs(lines):
     return paras
 
 
-def is_heading(line):
-    return bool(RE_VOLUME.match(line) or RE_SECTION.match(line) or RE_EXTRA.match(line))
+RE_SECTION_HEAD = re.compile(r"^(?:正文\s*)?第\s*[一二三四五六七八九十百千万零两0-9]{1,6}\s*[节回章](.*)$")
+
+
+def is_heading(line, loose=False):
+    """判断某一行是不是章节标题。
+
+    关键点：像「第二章的正文内容。」这种句子，章号后面直接跟正文、没有分隔符，
+    不能当标题（否则会把整章吞掉）。真正的标题要么到此为止（「第二百零六节：」），
+    要么用空格 / 冒号 / 顿号隔开（「第一章 开端」「第一章：开端」）。
+    """
+    if not line or len(line) > 40:
+        return False
+
+    if RE_VOLUME.match(line) or RE_EXTRA.match(line):
+        # 序章 / 番外 / 楔子 这类标记较强，但整句带标点的仍是正文
+        return not (line[-1] in "。，、；" and len(line) > 12)
+
+    m = RE_SECTION_HEAD.match(line)
+    if not m:
+        return False
+    raw = m.group(1)
+    if not raw.strip():
+        return True
+    if raw[0] in " \u3000：:、·.-—":      # 有分隔符 → 一定是标题（标题可能以 ！？ 结尾）
+        return True
+    tail = raw.strip()
+    # 没有分隔符（「第两百一十一章天作之合」）：短、不以句末标点结尾、不以虚词开头 → 仍是标题
+    if len(tail) <= 12 and tail[-1] not in "。！？…" and tail[0] not in "的了是在有就都也这那我你他她它":
+        return True
+    return loose
 
 
 def clean_title(t):
@@ -229,11 +257,65 @@ def parse_epub(path):
     return chapters, volumes, ""
 
 
+def docx_lines(path):
+    """读取 .docx 的段落文本（忽略图片、表格、样式）。"""
+    try:
+        from docx import Document
+    except ImportError:
+        raise BookError("解析 .docx 需要 python-docx：pip install python-docx")
+    doc = Document(path)
+    out = []
+    for p in doc.paragraphs:
+        t = (p.text or "").strip()
+        if t:
+            out.append(t)
+    for table in doc.tables:                 # 少数 txt 转 docx 会把正文塞进表格
+        for row in table.rows:
+            for cell in row.cells:
+                t = (cell.text or "").strip()
+                if t:
+                    out.append(t)
+    return out
+
+
+def md_lines(path):
+    """读取 .md，去掉井号标记与代码围栏，保留正文。"""
+    lines = []
+    for line in read_text(path).replace("\r\n", "\n").split("\n"):
+        s = line.strip()
+        if s.startswith("```"):
+            continue
+        if s.startswith("#"):
+            s = s.lstrip("#").strip()
+            if not s:
+                continue
+        s = re.sub(r"^\s*[-*+]\s+", "", s)
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+        lines.append(s)
+    return lines
+
+
 def parse_book_file(path):
     """按扩展名选择解析器，返回 (chapters, volumes, notice)。"""
-    if path.lower().endswith(".epub"):
+    low = path.lower()
+    if low.endswith(".epub"):
         return parse_epub(path)
-    return parse_book(read_text(path))
+
+    if low.endswith(".docx"):
+        lines = [l.replace("\u3000", " ").strip() for l in docx_lines(path)]
+    elif low.endswith(".md"):
+        lines = [l.replace("\u3000", " ").strip() for l in md_lines(path)]
+    else:
+        lines = norm_lines(read_text(path))
+
+    chapters, volumes, notice = parse_book_lines(lines)
+    # 章节太少但正文很长 → 多半是「第一章开端」这种标题没有分隔符，放宽再解析一次
+    if len(chapters) < 3 and sum(len(l) for l in lines) > 20000:
+        loose = parse_book_lines(lines, loose=True)
+        if len(loose[0]) > len(chapters):
+            print("  （标题无分隔符，已按宽松模式重新切分：%d 章）" % len(loose[0]))
+            return loose
+    return chapters, volumes, notice
 
 
 def chapter_plain_text(chapters):
@@ -249,24 +331,27 @@ def chapter_plain_text(chapters):
 
 def parse_book(text):
     """返回 (chapters, volumes, notice)。chapters: [{title, paras, vol}]"""
-    lines = norm_lines(text)
+    return parse_book_lines(norm_lines(text))
 
+
+def parse_book_lines(lines, loose=False):
+    """lines 已做过空白归一，正文/标题切分都从这里开始。"""
     # ---- 定位所有标题行 ----
     heads = []
     for i, line in enumerate(lines):
-        if not line or not is_heading(line):
+        if not line or not is_heading(line, loose):
             continue
         vm = RE_VOLUME.match(line)
         if vm:
             # 卷名可能写在同一行，也可能在下一行
             name = line[vm.end():].strip()
-            if not name and i + 1 < len(lines) and lines[i + 1] and not is_heading(lines[i + 1]):
+            if not name and i + 1 < len(lines) and lines[i + 1] and not is_heading(lines[i + 1], loose):
                 name = lines[i + 1]
             heads.append({"i": i, "kind": "vol",
                           "title": clean_title(line + (" " + name if name else "")),
                           "skip": 1 if (name and name != line) else 0})
             continue
-        if RE_SECTION.match(line) and not RE_EXTRA.match(line) and len(line) <= 40:
+        if RE_SECTION.match(line) and not RE_EXTRA.match(line):
             heads.append({"i": i, "kind": "sec", "title": clean_title(line), "skip": 0})
             continue
         heads.append({"i": i, "kind": "extra", "title": clean_title(line), "skip": 0})
@@ -357,8 +442,8 @@ def load_config():
         raise BookError("找不到书单配置：%s" % CONFIG)
     with open(CONFIG, encoding="utf-8-sig") as f:
         cfg = json.load(f)
-    if not isinstance(cfg, list) or not cfg:
-        raise BookError("books/books.json 需要是一个非空数组，例如 [ { \"id\": \"...\", ... } ]")
+    if not isinstance(cfg, list):
+        raise BookError("books/books.json 需要是一个数组，例如 [ { \"id\": \"...\", ... } ]")
 
     seen = set()
     for i, b in enumerate(cfg):
@@ -372,6 +457,108 @@ def load_config():
         seen.add(b["id"])
         if not os.path.exists(resolve(b["source"])):
             raise BookError("《%s》的原文不存在：%s" % (b["title"], b["source"]))
+    return cfg
+
+
+# ---------------------------------------------------------------- 自动上架
+BOOK_EXT = (".txt", ".md", ".docx", ".epub")
+BOOKS_DIR = os.path.join(ROOT, "books")
+
+
+def guess_meta(path):
+    """从文件名（和文本开头）猜书名 / 作者。"""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    title = re.sub(r"【[^】]*】|\[[^\]]*\]", "", stem)      # 去掉【精排】这类标记
+    author = ""
+
+    m = re.search(r"[（(]\s*([^()（）]{1,20})\s*[)）]\s*$", title)
+    if m:
+        author = m.group(1).strip()
+        title = title[:m.start()]
+
+    m = re.search(r"\s+-\s+([^-]{1,20})$", title)
+    if not author and m:
+        author = m.group(1).strip()
+        title = title[:m.start()]
+
+    if not author:
+        head = ""
+        if path.lower().endswith((".txt", ".md")):
+            head = read_text(path)[:3000]
+        elif path.lower().endswith(".docx"):
+            try:
+                head = "\n".join(docx_lines(path)[:30])
+            except BookError:
+                head = ""
+        if head:
+            m = re.search(r"作\s*者\s*[:：]\s*(\S{1,20})", head)
+            if m:
+                author = m.group(1).strip()
+
+    title = re.sub(r"\s*[（(]?\d{1,3}[)）]?\s*$", "", title)  # 去掉 (1)
+    title = title.strip(" -—_·")
+    return (title or stem), author
+
+
+def make_id(name, used):
+    stem = os.path.splitext(name)[0]
+    slug = re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
+    if len(slug) < 3 or slug in used:
+        import hashlib
+        slug = "bk-" + hashlib.md5(name.encode("utf-8")).hexdigest()[:6]
+    base, n = slug, 2
+    while slug in used:
+        slug = "%s-%d" % (base, n)
+        n += 1
+    return slug
+
+
+def auto_register(cfg):
+    """把 books/ 里还没登记的文件自动补进书单（文件名 → 书名/作者）。"""
+    used_src = {os.path.abspath(resolve(b["source"])) for b in cfg}
+    used_dl = {os.path.abspath(resolve(b.get("download") or b["source"])) for b in cfg}
+    used_ids = {b["id"] for b in cfg}
+    added = 0
+
+    if not os.path.isdir(BOOKS_DIR):
+        return cfg
+
+    for name in sorted(os.listdir(BOOKS_DIR)):
+        low = name.lower()
+        if name.startswith(".") or name.startswith("~$") or not low.endswith(BOOK_EXT):
+            continue
+        p = os.path.join(BOOKS_DIR, name)
+        if not os.path.isfile(p):
+            continue
+        absp = os.path.abspath(p)
+        if absp in used_src or absp in used_dl:
+            continue
+
+        title, author = guess_meta(p)
+        bid = make_id(name, used_ids)
+        rel_src = "books/" + name
+        rel_dl = rel_src if low.endswith((".txt", ".md")) else \
+            "books/" + os.path.splitext(name)[0] + ".txt"
+        cfg.append({
+            "id": bid,
+            "title": title,
+            "author": author,
+            "tags": ["自动上架"],
+            "note": "自动上架 · " + time.strftime("%Y-%m-%d"),
+            "source": rel_src,
+            "download": rel_dl,
+        })
+        used_ids.add(bid)
+        used_src.add(absp)
+        used_dl.add(os.path.abspath(resolve(rel_dl)))
+        added += 1
+        print("＋ 自动登记《%s》%s → books/%s" % (title, ("／" + author) if author else "", name))
+
+    if added:
+        with open(CONFIG, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        print("已把 %d 本新书写回 books/books.json（书名/作者可手改）" % added)
     return cfg
 
 
@@ -438,11 +625,16 @@ def build_book(b, write_files=True):
 
 def main():
     t0 = time.time()
-    only = set(sys.argv[1:])
+    only = set(a for a in sys.argv[1:] if not a.startswith("-"))
     try:
         cfg = load_config()
+        cfg = auto_register(cfg)          # books/ 里新丢进来的文件自动补登记
     except BookError as e:
         print("配置错误：", e)
+        sys.exit(1)
+
+    if not cfg:
+        print("books/ 里还没有可上架的文件（支持 .txt / .md / .docx / .epub）")
         sys.exit(1)
 
     catalog = []
@@ -461,15 +653,44 @@ def main():
         sys.exit(1)
 
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
-    with open(os.path.join(ROOT, "data", "catalog.js"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("/* 由 tools/build_data.py 自动生成，请勿手改 */\n")
-        f.write("window.MD_PUBLIC_BOOKS = ")
-        f.write(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")))
-        f.write(";\n")
+    cat_path = os.path.join(ROOT, "data", "catalog.js")
+    old_cat = ""
+    if os.path.exists(cat_path):
+        with open(cat_path, encoding="utf-8") as f:
+            old_cat = f.read()
+
+    body = "/* 由 tools/build_data.py 自动生成，请勿手改 */\n" \
+           "window.MD_PUBLIC_BOOKS = " + json.dumps(catalog, ensure_ascii=False, separators=(",", ":")) + ";\n"
+    with open(cat_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(body)
+
+    if body != old_cat:
+        bump_version()
+    else:
+        print("· 目录内容没有变化，版本号保持不变")
 
     print("\n共 %d 本公开书，总 %d 字，耗时 %.1fs" % (
         len(catalog), sum(b["words"] for b in catalog), time.time() - t0))
     print("下一步：git add -A && git commit -m \"新增书籍\" && git push（Pages 会自动重建，约 1 分钟）")
+
+
+def bump_version():
+    """目录内容变了就让静态资源换 URL，避免浏览器继续用旧 JS / 旧目录。"""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    idx = os.path.join(ROOT, "index.html")
+    app = os.path.join(ROOT, "assets", "app.js")
+    try:
+        html = open(idx, encoding="utf-8").read()
+        html = re.sub(r"\?v=[\w.\-]+", "?v=" + stamp, html)
+        html = re.sub(r"window\.MD_BUILD = '[^']*'", "window.MD_BUILD = '%s'" % stamp, html)
+        open(idx, "w", encoding="utf-8", newline="\n").write(html)
+
+        js = open(app, encoding="utf-8").read()
+        js = re.sub(r"const BUILD = '[^']*'", "const BUILD = '%s'" % stamp, js, count=1)
+        open(app, "w", encoding="utf-8", newline="\n").write(js)
+        print("· 已更新版本号 → %s" % stamp)
+    except OSError as e:
+        print("· 版本号更新失败（忽略）：%s" % e)
 
 
 if __name__ == "__main__":

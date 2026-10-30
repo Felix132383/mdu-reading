@@ -41,21 +41,46 @@ tools/build_data.py   把 TXT / EPUB 转换成上面的数据
 
 > 构建脚本支持两种源文件：`.txt`（自动识别 UTF-8 / GB18030，自动过滤盗版站点水印、识别「正文 第X章」这类前缀）和 `.epub`（按 NCX 目录切章，父级目录自动变成“卷”）。
 
-## 加一本新书到公开书架
+## 上架一本书（两种方式）
 
-**第 1 步：把小说 txt 放进 `books/` 目录**（文件名随意，建议和书同名）
+### 方式一：一条命令（本地）
 
-章节标题单独占一行即可被识别，这些写法都支持：
+```bash
+python tools/publish.py "D:\下载\某某小说.txt"
+python tools/publish.py a.txt b.epub c.docx        # 一次多本
+python tools/publish.py d.docx --title 书名 --author 作者
+python tools/publish.py e.txt --no-push            # 只构建，先看看效果
+```
+
+它会把文件复制进 `books/`、自动猜书名/作者、登记到 `books.json`、切章生成数据，然后 `git commit + push`，Pages 一分钟后自动发布。
+
+### 方式二：网页上传（手机也行，全自动）
+
+先启用一次自动化（只需做一次）：把 [`tools/publish.workflow.yml`](tools/publish.workflow.yml) 复制到 `.github/workflows/publish.yml` 提交上去
+（网页版：仓库首页 → **Add file → Create new file** → 路径填 `.github/workflows/publish.yml` → 粘贴内容 → Commit）。
+启用后，在 `books/` 目录 **Add file → Upload files** 传书即可：Actions 自动解析、生成章节、提交，Pages 随后自动发布，约 2 分钟生效，全程不用碰命令行。
+
+> 两种方式都支持 `.txt` / `.md` / `.docx` / `.epub`。
+> 自动登记后如果书名、作者猜得不对，直接改 `books/books.json` 里那一条再重新构建即可（`id` 不要改，改了就换了链接）。
+
+### 章节识别规则
+
+标题单独占一行就能识别，以下写法都支持：
 
 ```
-第一章 开端         第12章 xxx        第十二回 xxx
-第二卷              第一节 xxx        番外篇 某篇
-序章 / 序言 / 楔子 / 引子 / 前言 / 尾声 / 终章 / 后记 / Chapter 1
+第一章 开端         第一章：开端        第两百一十一章天作之合
+第12章 xxx         第十二回 xxx        第一节 xxx
+第二卷              番外篇 某篇         序章 / 序言 / 楔子 / 尾声 / Chapter 1
 ```
 
-编码 UTF-8 或 GBK/GB18030 都行（脚本会自动识别）。标题行建议不超过 36 字、不以句号结尾，以免被当成正文。
+- 标题行建议 ≤ 40 字、不以句号结尾；「第二章的正文内容。」这类句子不会被误判成标题
+- 编码 UTF-8 / GBK / GB18030 自动识别；盗版站水印（"最新网址""小说网…"）会自动剔除
+- `.epub` 按 NCX 目录切章，父级目录自动变成「卷」
+- `.docx` 读取段落文字（图片、表格外的格式会忽略）
 
-**第 2 步：在 `books/books.json` 里加一条记录**
+### 手动登记（需要自定义 id / 简介时）
+
+`books/books.json` 里每条记录：
 
 ```json
 {
@@ -64,39 +89,24 @@ tools/build_data.py   把 TXT / EPUB 转换成上面的数据
   "author": "天蚕土豆",
   "tags": ["玄幻", "完本"],
   "note": "精校版",
-  "source": "books/斗破苍穹.txt",
-  "download": "books/斗破苍穹.txt"
+  "intro": "一句话简介",
+  "source": "books/dou-po-cang-qiong.txt",
+  "download": "books/dou-po-cang-qiong.txt"
 }
 ```
 
 | 字段 | 说明 |
 |---|---|
-| `id` | 必填，小写字母/数字/连字符，决定链接 `#/b/<id>/<章>`，不要和已有书重复 |
-| `title` / `author` / `tags` / `note` | 书架卡片上显示的内容 |
+| `id` | 必填，小写字母/数字/连字符，决定链接 `#/b/<id>/<章>`；**上架后不要再改** |
+| `title` / `author` / `tags` / `note` / `intro` | 书架卡片与书籍信息里显示的内容 |
 | `source` | 必填，原文路径（相对仓库根目录，也可写绝对路径） |
-| `download` | 可选，"下载 TXT" 指向的文件；和 `source` 相同则不复制，不同则自动复制一份 |
+| `download` | 可选，"下载 TXT" 指向的文件；和 `source` 相同则不复制，epub/docx 会自动导出 txt |
 | `dir` | 可选，章节输出目录，默认 `data/<id>/c`（一般不用写） |
 
-**第 3 步：重建数据**
+改完执行 `python tools/build_data.py` 重建即可。
 
-```bash
-python tools/build_data.py
-```
-
-终端会打印每本书的章节数/字数，并重写 `data/catalog.js` 与 `data/<id>/c/*.js`。
-重复运行是幂等的（内容没变时 git 不会产生改动），旧的多余章节文件会自动清理。
-
-**第 4 步：提交并推送**
-
-```bash
-git add -A
-git commit -m "新增书籍：斗破苍穹"
-git push
-```
-
-推送后 GitHub Pages 会自动重新构建（约 1 分钟）。刷新页面若没看到新书，按 `Ctrl+F5` 强刷一下（`catalog.js` 被浏览器缓存了）。
-
-> 删除一本书：从 `books.json` 里删掉那条记录 → 删掉 `data/<id>/` 目录 → 重新运行脚本 → 提交推送。
+> 重复运行是幂等的（内容没变时 git 不会产生改动），旧的多余章节文件会自动清理。
+> 删除一本书：从 `books.json` 里删掉那条 → 删掉 `data/<id>/` 目录 → 重新构建 → 推送。
 
 ## 本地预览
 
