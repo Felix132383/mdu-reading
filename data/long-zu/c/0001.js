@@ -1,0 +1,1 @@
+__MDC("0001",["龙族全套 共七册（龙族Ⅰ-龙族Ⅳ+龙族前传） 在你最孤单最无望的时候，有一扇门会在你身边打开。 路明非等了十八年，在他最衰的那一刻，门开了。 谨以此书献给所有有梦想的衰小孩！ ——江南 When you feel most lonely and desperate, there will be a door open for you. As long as you have a dream and dare to rise, poor children will also have proud expression in the eyes. By Jiang Nan ."]);

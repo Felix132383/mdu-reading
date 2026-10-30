@@ -1,0 +1,1 @@
+__MDC("0014",["龙族全套 共七册（龙族Ⅰ-龙族Ⅳ+龙族前传） 每个人年少的时候， 心中都曾有一个孤独的路明非，或者是楚子航。 谨以此书来缅怀我们曾有过的孤独。 —— 江南 When you were young, there is always a helpless guy called Lu Mingfei in your heart; When you grew up, there is always a lonely guy called Chu Zihang in your heart. By Jiang Nan. 2011"]);

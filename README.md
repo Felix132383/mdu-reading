@@ -4,6 +4,17 @@
 
 线上地址：<https://felix132383.github.io/mdu-reading/>
 
+## 公开书架
+
+| 书名 | 作者 | 章节 | 字数 | 来源 |
+|---|---|---|---|---|
+| [蛊真人](https://felix132383.github.io/mdu-reading/#/b/gu-zhen-ren/1) | 蛊真人 | 2336 | 730 万 | TXT（校对 5.0） |
+| [剑来](https://felix132383.github.io/mdu-reading/#/b/jian-lai/1) | 烽火戏诸侯 | 1144 | 1245 万 | TXT |
+| [斗破苍穹](https://felix132383.github.io/mdu-reading/#/b/dou-po-cang-qiong/1) | 天蚕土豆 | 1210 | 513 万 | TXT |
+| [神秘复苏](https://felix132383.github.io/mdu-reading/#/b/shen-mi-fu-su/1) | 佛前献花 | 1611 | 531 万 | EPUB（精排） |
+| [道诡异仙](https://felix132383.github.io/mdu-reading/#/b/dao-gui-yi-xian/1) | 狐尾的笔 | 1030 | 223 万 | TXT |
+| [龙族](https://felix132383.github.io/mdu-reading/#/b/long-zu/1) | 江南 | 124 | 219 万 | EPUB（全套七册） |
+
 ## 功能
 
 - **公开书架**：书籍元数据与正文按章节拆分，进站即可读，所有人可见。
@@ -21,12 +32,14 @@ index.html            页面骨架
 assets/style.css      样式（含三套主题与响应式）
 assets/app.js         应用逻辑（书架 / 阅读器 / 写作 / 导入导出）
 books/books.json      ★ 公开书单配置（加书只改这里）
-books/*.txt           新书的原文（放在这里，随仓库一起发布）
+books/*.txt / *.epub  各书原文（随仓库一起发布，供“下载 TXT”）
 data/catalog.js       公开书架目录（书名、简介、章节索引），由脚本生成
 data/<id>/c/0001.js…  分章正文，每章一个脚本文件，按需加载
-data/gu/gu-zhen-ren.txt  《蛊真人》原文副本（下载用）
-tools/build_data.py   把纯文本小说转换成上面的数据
+data/gu/gu-zhen-ren.txt  《蛊真人》原文（历史位置）
+tools/build_data.py   把 TXT / EPUB 转换成上面的数据
 ```
+
+> 构建脚本支持两种源文件：`.txt`（自动识别 UTF-8 / GB18030，自动过滤盗版站点水印、识别「正文 第X章」这类前缀）和 `.epub`（按 NCX 目录切章，父级目录自动变成“卷”）。
 
 ## 加一本新书到公开书架
 

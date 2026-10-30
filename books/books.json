@@ -1,4 +1,4 @@
-﻿[
+[
   {
     "id": "gu-zhen-ren",
     "title": "蛊真人",
@@ -9,5 +9,55 @@
     "dir": "data/gu/c",
     "source": "data/gu/gu-zhen-ren.txt",
     "download": "data/gu/gu-zhen-ren.txt"
+  },
+  {
+    "id": "jian-lai",
+    "title": "剑来",
+    "author": "烽火戏诸侯",
+    "tags": ["仙侠", "群像", "完本"],
+    "note": "泥瓶巷少年提剑远游",
+    "intro": "大千世界，无奇不有。骊珠洞天，小镇少年陈平安自幼孤苦，烧瓷为生，凭一心赤诚走上修行之路，一路问剑天下。",
+    "source": "books/jian-lai.txt",
+    "download": "books/jian-lai.txt"
+  },
+  {
+    "id": "dou-po-cang-qiong",
+    "title": "斗破苍穹",
+    "author": "天蚕土豆",
+    "tags": ["玄幻", "热血", "完本"],
+    "note": "斗气大陆 · 三十年河东",
+    "intro": "这里是属于斗气的世界，没有花俏艳丽的魔法，有的，仅仅是繁衍到巅峰的斗气！天才少年萧炎跌落谷底，从一枚戒指开始重新崛起。",
+    "source": "books/dou-po-cang-qiong.txt",
+    "download": "books/dou-po-cang-qiong.txt"
+  },
+  {
+    "id": "dao-gui-yi-xian",
+    "title": "道诡异仙",
+    "author": "狐尾的笔",
+    "tags": ["悬疑", "克苏鲁", "完本"],
+    "note": "分不清现实与虚幻",
+    "intro": "李火旺在诡异道观中醒来，一边是腐朽阴森的神鬼世界，一边是冰冷的现代病房，究竟哪一边才是真的？",
+    "source": "books/dao-gui-yi-xian.txt",
+    "download": "books/dao-gui-yi-xian.txt"
+  },
+  {
+    "id": "shen-mi-fu-su",
+    "title": "神秘复苏",
+    "author": "佛前献花",
+    "tags": ["灵异", "完本"],
+    "note": "EPUB 精排版",
+    "intro": "五浊恶世，地狱已空，厉鬼复苏，人间如狱。这个世界鬼出现了，那么神又在哪里？求神救世，可世上已无神，只有鬼。",
+    "source": "books/shen-mi-fu-su.epub",
+    "download": "books/shen-mi-fu-su.txt"
+  },
+  {
+    "id": "long-zu",
+    "title": "龙族",
+    "author": "江南",
+    "tags": ["幻想", "青春", "完本"],
+    "note": "全套七册：前传 + Ⅰ~Ⅳ",
+    "intro": "普通高中生路明非收到一封来自卡塞尔学院的录取通知书，从此走进龙与混血种的世界。本版为全套七册：前传、Ⅰ火之晨曦、Ⅱ悼亡者之瞳、Ⅲ黑月之潮、Ⅳ奥丁之渊。",
+    "source": "books/long-zu.epub",
+    "download": "books/long-zu.txt"
   }
 ]

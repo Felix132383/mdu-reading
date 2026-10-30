@@ -1,0 +1,1 @@
+__MDC("0098",["龙族全套 共七册（龙族Ⅰ-龙族Ⅳ+龙族前传） 你打开前方那扇门的时候，身后的退路就会消失， 自始至终，你都只有一条路走。 ——江南 When you open the door in front of you, you lost the way at your back. From beginning to the end, you have only one way to go. By Jiang Nan .", "龙族IV·奥丁之渊"]);
