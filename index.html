@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>墨读 · 在线小说阅读器</title>
+<meta name="description" content="墨读是一个纯静态的小说阅读器：公开书架在线追更，本地 TXT/EPUB 导入、写书、导出，支持书架、目录、进度记忆与三种阅读主题。">
+<meta name="theme-color" content="#f3ede2">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:title" content="墨读 · 在线小说阅读器">
+<meta property="og:description" content="公开书架在线阅读，本地导入、写作、导出，纯静态、无需登录。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a0522d'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='%23fff' font-family='serif'%3E%E5%A2%A8%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-theme="sepia" data-view="shelf">
+
+<div id="readbar" aria-hidden="true"></div>
+
+<!-- ================= 顶栏 ================= -->
+<header class="topbar">
+  <a class="logo" href="#/" aria-label="墨读 首页">墨读<small>MDU</small></a>
+  <div class="spacer"></div>
+
+  <input id="search" class="search shelf-only" type="search" placeholder="搜索书架…" autocomplete="off" aria-label="搜索书架">
+  <button class="btn shelf-only" id="btnImport" aria-label="导入文件"><span class="ico" aria-hidden="true">⇪</span><span class="lbl">导入文件</span></button>
+  <button class="btn shelf-only" id="btnNew" aria-label="写新书"><span class="ico" aria-hidden="true">✎</span><span class="lbl">写新书</span></button>
+  <button class="btn icon ghost" id="btnTheme" title="切换配色（宣纸 / 夜读 / 素白）" aria-label="切换配色">◐</button>
+  <button class="btn icon ghost only-desktop" id="btnFull" title="全屏阅读" aria-label="全屏">⛶</button>
+  <input type="file" id="fileInput" accept=".txt,.md,.epub,text/plain" multiple hidden>
+</header>
+
+<!-- ================= 首页 / 书架 ================= -->
+<main class="view active" id="view-shelf">
+  <div class="wrap">
+    <section class="hero">
+      <h1>墨读</h1>
+      <p>一个纯静态的小说阅读器。公开书架可直接在线阅读；也可以把本地 TXT / EPUB 导入书架，或自己动笔写一本书——全部数据只留在你的浏览器里。</p>
+      <div class="actions">
+        <button class="btn primary" id="btnResume">继续阅读</button>
+        <a class="btn" href="#shelf-public">浏览书架</a>
+        <button class="btn" id="btnImport2">导入本地文件</button>
+      </div>
+    </section>
+
+    <section id="shelf-public">
+      <div class="section-head">
+        <h2>公开书架</h2>
+        <span class="count" id="pubCount"></span>
+        <span class="line"></span>
+        <span class="count">所有人可见</span>
+      </div>
+      <div class="shelf" id="shelfPublic"></div>
+    </section>
+
+    <section id="shelf-local" style="margin-top:38px">
+      <div class="section-head">
+        <h2>我的书架</h2>
+        <span class="count" id="locCount"></span>
+        <span class="line"></span>
+        <span class="count">仅保存在本机浏览器</span>
+      </div>
+      <div class="list" id="shelfLocal"></div>
+    </section>
+
+    <footer class="site-foot">
+      <span>墨读 · 纯静态阅读器</span>
+      <span>数据仅存本机 IndexedDB / localStorage</span>
+      <span id="footStats"></span>
+      <span class="spacer"></span>
+      <span id="footDate"></span>
+      <span style="flex-basis:100%">书籍内容版权归原作者所有，本站仅供个人学习与交流使用。</span>
+    </footer>
+  </div>
+</main>
+
+<!-- ================= 阅读器 ================= -->
+<section class="view" id="view-reader">
+  <div class="reader">
+    <aside class="toc" id="toc" aria-label="目录">
+      <div class="toc-head">
+        <span class="t">目录</span>
+        <input id="tocSearch" class="toc-search" type="search" placeholder="搜索章节…" autocomplete="off" aria-label="搜索章节">
+      </div>
+      <div class="toc-list" id="tocList" role="listbox" aria-label="章节列表"></div>
+    </aside>
+
+    <div class="read-main">
+      <div class="read-tools">
+        <button class="btn ghost" id="btnBack" title="返回书架（Esc）">← 书架</button>
+        <button class="btn ghost only-mobile" id="btnTocOpen" title="打开目录">目录</button>
+        <span class="title" id="rBookTitle"></span>
+        <span class="pos" id="rPos"></span>
+        <div class="spacer"></div>
+        <button class="btn ghost only-desktop" id="btnPrev" title="上一章（←）">上一章</button>
+        <button class="btn ghost only-desktop" id="btnNext" title="下一章（→）">下一章</button>
+        <button class="btn icon ghost" id="btnFont" title="阅读设置" aria-label="阅读设置">Aa</button>
+        <button class="btn icon ghost" id="btnTocToggle" title="显示/隐藏目录" aria-label="显示或隐藏目录">☰</button>
+      </div>
+
+      <article class="article" id="article"></article>
+
+      <div class="chap-foot" id="chapFoot">
+        <button class="btn" id="btnPrev2">← 上一章</button>
+        <button class="btn primary" id="btnNext2">下一章 →</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 写作器 ================= -->
+<section class="view" id="view-writer">
+  <div class="writer">
+    <aside class="toc wtoc" id="wtoc" aria-label="章节">
+      <div class="toc-head">
+        <span class="t">章节</span>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="btnAddCh" title="新增章节">＋ 新章</button>
+      </div>
+      <div class="toc-list" id="wChapters"></div>
+    </aside>
+    <div class="write-main">
+      <div class="write-tools">
+        <button class="btn ghost" id="btnBack2">← 书架</button>
+        <button class="btn ghost only-mobile" id="btnWToc" title="章节列表">章节</button>
+        <input id="wTitle" class="title-input" placeholder="书名" aria-label="书名">
+        <div class="spacer"></div>
+        <span class="stat" id="wStat"></span>
+        <button class="btn ghost" id="btnExportTxt">导出 TXT</button>
+        <button class="btn ghost" id="btnExportHtml">导出 HTML</button>
+        <button class="btn ghost" id="btnPreview">预览</button>
+      </div>
+      <div class="paper">
+        <input id="chTitle" placeholder="章节标题" aria-label="章节标题">
+        <textarea id="chBody" placeholder="开始写作…" aria-label="正文"></textarea>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 阅读设置浮层 -->
+<div class="pop" id="pop" role="dialog" aria-label="阅读设置">
+  <h4>阅读设置</h4>
+  <div class="field">
+    <label for="setFs">字号</label>
+    <input type="range" id="setFs" min="15" max="32" step="1">
+    <span class="val" id="setFsVal"></span>
+  </div>
+  <div class="field">
+    <label for="setLh">行距</label>
+    <input type="range" id="setLh" min="1.5" max="2.6" step="0.1">
+    <span class="val" id="setLhVal"></span>
+  </div>
+  <div class="field">
+    <label>字体</label>
+    <div class="segs" id="segFont">
+      <button data-v="serif">宋体</button>
+      <button data-v="sans">黑体</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>版心</label>
+    <div class="segs" id="segWidth">
+      <button data-v="680">窄</button>
+      <button data-v="780">中</button>
+      <button data-v="900">宽</button>
+    </div>
+  </div>
+</div>
+
+<div id="mask"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="data/catalog.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
