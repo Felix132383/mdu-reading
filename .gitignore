@@ -2,3 +2,4 @@
 .shots/
 .probe/
 *.log
+__pycache__/
