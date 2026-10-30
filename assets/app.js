@@ -122,36 +122,45 @@
   }
 
   /* ------------------------------------------------------------ 章节数据加载 */
-  const chapterCache = new Map();      // fid -> string[]
-  const pending = new Map();           // fid -> {resolve, reject}
+  // 注意：缓存必须按「章节文件的绝对 URL」做 key。
+  // 每本书的章节文件都叫 0001.js、0002.js…，只用文件名会串书（A 书读到 B 书的正文）。
+  const chapterCache = new Map();      // 绝对 URL -> string[]
+  const pending = new Map();           // 绝对 URL -> {resolve, reject}
+
+  function absUrl(url) {
+    try { return new URL(url, document.baseURI).href; } catch (e) { return url; }
+  }
 
   window.__MDC = function (fid, paras) {
-    chapterCache.set(fid, paras);
-    const p = pending.get(fid);
-    if (p) { pending.delete(fid); p.resolve(paras); }
+    // 章节文件执行时，用正在执行的 script 的 URL 定位缓存槽
+    const key = (document.currentScript && document.currentScript.src) || fid;
+    chapterCache.set(key, paras);
+    const p = pending.get(key);
+    if (p) { pending.delete(key); p.resolve(paras); }
   };
 
-  function loadChapterFile(url, fid) {
-    if (chapterCache.has(fid)) return Promise.resolve(chapterCache.get(fid));
+  function loadChapterFile(url) {
+    const key = absUrl(url);
+    if (chapterCache.has(key)) return Promise.resolve(chapterCache.get(key));
     return new Promise((resolve, reject) => {
       let done = false;
       const s = document.createElement('script');
       s.src = url;
       s.async = true;
-      pending.set(fid, {
+      pending.set(key, {
         resolve(p) { done = true; resolve(p); },
         reject(e) { done = true; reject(e); }
       });
       s.onload = () => {
         s.remove();
         if (!done) {
-          pending.delete(fid);
-          chapterCache.has(fid) ? resolve(chapterCache.get(fid)) : reject(new Error('章节数据为空'));
+          pending.delete(key);
+          chapterCache.has(key) ? resolve(chapterCache.get(key)) : reject(new Error('章节数据为空'));
         }
       };
       s.onerror = () => {
         s.remove();
-        pending.delete(fid);
+        pending.delete(key);
         if (!done) reject(new Error('章节文件加载失败'));
       };
       document.head.appendChild(s);
@@ -165,7 +174,7 @@
       if (Array.isArray(ch.content)) return Promise.resolve(ch.content);
       return Promise.resolve(ch.content.split('\n').map(s => s.trim()).filter(Boolean));
     }
-    return loadChapterFile((book.dir || 'data/gu/c/') + ch.f + '.js', ch.f);
+    return loadChapterFile((book.dir || 'data/gu/c/') + ch.f + '.js');
   }
 
   /* -------------------------------------------------------------- 书架数据 */
@@ -484,8 +493,9 @@
     // 预取下一章
     if (book.source === 'public' && i + 1 < book.chapters.length) {
       const next = book.chapters[i + 1];
-      if (!chapterCache.has(next.f)) {
-        const job = () => loadChapterFile((book.dir || 'data/gu/c/') + next.f + '.js', next.f).catch(() => {});
+      const nextUrl = (book.dir || 'data/gu/c/') + next.f + '.js';
+      if (!chapterCache.has(absUrl(nextUrl))) {
+        const job = () => loadChapterFile(nextUrl).catch(() => {});
         if (window.requestIdleCallback) window.requestIdleCallback(job, { timeout: 1500 });
         else setTimeout(job, 400);
       }

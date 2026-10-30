@@ -289,14 +289,17 @@ def parse_book(text):
             continue
         if intro_idx is not None and pref_idx is None and RE_PREFACE.match(l):
             pref_idx = k
-    if intro_idx is None:                      # 没有“简介”标记时，退化为前几行
-        intro_idx, intro_paras = 0, front_joined[1:3]
+    if intro_idx is None:                      # 没有“简介”标记时，取书名/作者行之后的前几行
+        intro_idx, intro_paras = 0, front_joined[1:7]
     else:
         intro_paras = front_joined[intro_idx + 1: pref_idx if pref_idx is not None else len(front_joined)]
     notice = front_joined[2:intro_idx] if intro_idx > 2 else []
 
     if intro_paras:
-        chapters.append({"title": "简介", "paras": merge_paragraphs(intro_paras), "vol": -1})
+        # 简介区每行通常就是一条独立信息（书名/作者/一句话简介），不再做折行合并
+        chapters.append({"title": "简介",
+                         "paras": [p for p in intro_paras if p.strip()],
+                         "vol": -1})
 
     if pref_idx is not None:
         head = front_joined[pref_idx]
