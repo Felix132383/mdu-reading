@@ -234,15 +234,24 @@
   /* -------------------------------------------------------------- 书架渲染 */
   function coverTitle(title) {
     const t = String(title || '书').replace(/\s+/g, '');
-    return t.length > 6 ? t.slice(0, 6) : t;
+    return t.length > 8 ? t.slice(0, 8) : t;
+  }
+
+  // 封面竖排书名：字多就缩小，避免被裁切
+  function coverStyle(text) {
+    const n = text.length;
+    const fs = n >= 7 ? 11 : n >= 6 ? 12 : n >= 5 ? 13 : n >= 4 ? 15 : 17;
+    const ls = n >= 5 ? '.1em' : '.2em';
+    return `font-size:${fs}px;letter-spacing:${ls}`;
   }
 
   function cardHTML(b) {
     const p = progressOf(b.id);
     const pct = bookPercent(b);
     const isPub = b.source === 'public';
+    const ct = coverTitle(b.title);
     return `<article class="card" data-id="${esc(b.id)}" data-act="open" tabindex="0" role="button" aria-label="${esc(b.title)}">
-      <div class="cover" aria-hidden="true"><span>${esc(coverTitle(b.title))}</span></div>
+      <div class="cover" aria-hidden="true"><span style="${coverStyle(ct)}">${esc(ct)}</span></div>
       <div class="card-body">
         <h3>${esc(b.title)}</h3>
         <div class="byline">${esc(b.author || '佚名')}</div>
