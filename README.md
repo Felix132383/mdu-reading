@@ -56,9 +56,14 @@ python tools/publish.py e.txt --no-push            # 只构建，先看看效果
 
 ### 方式二：网页上传（手机也行，全自动）
 
-先启用一次自动化（只需做一次）：把 [`tools/publish.workflow.yml`](tools/publish.workflow.yml) 复制到 `.github/workflows/publish.yml` 提交上去
-（网页版：仓库首页 → **Add file → Create new file** → 路径填 `.github/workflows/publish.yml` → 粘贴内容 → Commit）。
-启用后，在 `books/` 目录 **Add file → Upload files** 传书即可：Actions 自动解析、生成章节、提交，Pages 随后自动发布，约 2 分钟生效，全程不用碰命令行。
+自动化已经启用（`.github/workflows/publish.yml`，Actions 里的「自动上架」）。
+在 `books/` 目录 **Add file → Upload files** 传书即可：Actions 会自动解析、生成章节数据并提交，Pages 随后自动发布，约 2 分钟生效，全程不用碰命令行。
+
+- 传**单文件**：一本书
+- 传**目录**（路径写 `books/书名/0001.txt`）：目录即一本书，见下面「连载」
+- 删书：把 `books/` 里的源文件删掉，下一次构建会自动下线它（书单记录、章节数据、下载副本一起清掉）
+
+> 如果那个 workflow 文件哪天丢了，用 [`tools/publish.workflow.yml`](tools/publish.workflow.yml) 的内容重建即可。
 
 > 两种方式都支持 `.txt` / `.md` / `.docx` / `.epub`。
 > 自动登记后如果书名、作者猜得不对，直接改 `books/books.json` 里那一条再重新构建即可（`id` 不要改，改了就换了链接）。
