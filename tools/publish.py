@@ -23,9 +23,33 @@ def die(msg):
 
 
 def copy_in(src):
-    """把源文件复制进 books/，重名时自动加 -2、-3。"""
+    """把源文件（或整个目录）复制进 books/。
+
+    目录 = 一本书，里面放 0001.txt、0002.txt… 就是按章连载。
+    """
+    if os.path.isdir(src):
+        name = os.path.basename(os.path.normpath(src))
+        dst = os.path.join(BOOKS, name)
+        os.makedirs(dst, exist_ok=True)
+        n = 0
+        for root, _, files in os.walk(src):
+            for f in files:
+                if f.startswith((".", "~$")):
+                    continue
+                s = os.path.join(root, f)
+                if os.path.splitext(f)[1].lower() not in SUPPORTED:
+                    continue
+                d = os.path.join(dst, os.path.relpath(s, src))
+                os.makedirs(os.path.dirname(d), exist_ok=True)
+                shutil.copy2(s, d)
+                n += 1
+        if not n:
+            die("目录里没有可用的 txt/md/docx：%s" % src)
+        print("→ 已放入 books/%s/（%d 个文件）" % (name, n))
+        return dst
+
     if not os.path.isfile(src):
-        die("文件不存在：%s" % src)
+        die("文件或目录不存在：%s" % src)
     ext = os.path.splitext(src)[1].lower()
     if ext not in SUPPORTED:
         die("不支持的格式：%s（只支持 %s）" % (ext, " / ".join(SUPPORTED)))

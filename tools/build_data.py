@@ -295,18 +295,51 @@ def md_lines(path):
     return lines
 
 
-def parse_book_file(path):
-    """按扩展名选择解析器，返回 (chapters, volumes, notice)。"""
-    low = path.lower()
-    if low.endswith(".epub"):
-        return parse_epub(path)
+def natural_key(name):
+    """1.txt < 2.txt < 10.txt 这种自然序，方便按章连载。"""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
+
+def source_files(src):
+    """source 可以是单个文件，也可以是一个目录（目录里的文件按自然序拼接成一本书）。"""
+    if os.path.isdir(src):
+        names = [n for n in os.listdir(src)
+                 if not n.startswith((".", "~$")) and n.lower().endswith(BOOK_EXT)]
+        names.sort(key=natural_key)
+        files = [os.path.join(src, n) for n in names]
+        if not files:
+            raise BookError("目录里没有可用的书籍文件：%s" % src)
+        return files
+    if not os.path.exists(src):
+        raise BookError("原文不存在：%s" % src)
+    return [src]
+
+
+def lines_of(path):
+    low = path.lower()
     if low.endswith(".docx"):
-        lines = [l.replace("\u3000", " ").strip() for l in docx_lines(path)]
-    elif low.endswith(".md"):
-        lines = [l.replace("\u3000", " ").strip() for l in md_lines(path)]
-    else:
-        lines = norm_lines(read_text(path))
+        return [l.replace("\u3000", " ").strip() for l in docx_lines(path)]
+    if low.endswith(".md"):
+        return [l.replace("\u3000", " ").strip() for l in md_lines(path)]
+    if low.endswith(".epub"):
+        raise BookError("目录里请放 txt / md / docx；epub 请单独作为一本书")
+    return norm_lines(read_text(path))
+
+
+def parse_book_file(path):
+    """返回 (chapters, volumes, notice)。
+
+    path 是文件 → 单文件解析；path 是目录 → 目录内所有文件按自然序拼起来，
+    当成一本「分章上传」的书（连载时每次只加一个文件即可）。
+    """
+    files = source_files(path)
+    if len(files) == 1 and files[0].lower().endswith(".epub"):
+        return parse_epub(files[0])
+
+    lines = []
+    for f in files:
+        lines.extend(lines_of(f))
+        lines.append("")
 
     chapters, volumes, notice = parse_book_lines(lines)
     # 章节太少但正文很长 → 多半是「第一章开端」这种标题没有分隔符，放宽再解析一次
@@ -466,8 +499,9 @@ BOOKS_DIR = os.path.join(ROOT, "books")
 
 
 def guess_meta(path):
-    """从文件名（和文本开头）猜书名 / 作者。"""
-    stem = os.path.splitext(os.path.basename(path))[0]
+    """从文件名/目录名（和文本开头）猜书名 / 作者。"""
+    base = os.path.basename(os.path.normpath(path))
+    stem = base if os.path.isdir(path) else os.path.splitext(base)[0]
     title = re.sub(r"【[^】]*】|\[[^\]]*\]", "", stem)      # 去掉【精排】这类标记
     author = ""
 
@@ -483,13 +517,14 @@ def guess_meta(path):
 
     if not author:
         head = ""
-        if path.lower().endswith((".txt", ".md")):
-            head = read_text(path)[:3000]
-        elif path.lower().endswith(".docx"):
-            try:
-                head = "\n".join(docx_lines(path)[:30])
-            except BookError:
-                head = ""
+        try:
+            probe = source_files(path)[0] if os.path.isdir(path) else path
+            if probe.lower().endswith((".txt", ".md")):
+                head = read_text(probe)[:3000]
+            elif probe.lower().endswith(".docx"):
+                head = "\n".join(docx_lines(probe)[:30])
+        except (BookError, OSError, IndexError):
+            head = ""
         if head:
             m = re.search(r"作\s*者\s*[:：]\s*(\S{1,20})", head)
             if m:
@@ -514,7 +549,10 @@ def make_id(name, used):
 
 
 def auto_register(cfg):
-    """把 books/ 里还没登记的文件自动补进书单（文件名 → 书名/作者）。"""
+    """把 books/ 里还没登记的「文件」或「目录」自动补进书单（文件名 → 书名/作者）。
+
+    目录 = 一本书，里面的 txt/md/docx 按文件名自然序拼接，适合按章连载。
+    """
     used_src = {os.path.abspath(resolve(b["source"])) for b in cfg}
     used_dl = {os.path.abspath(resolve(b.get("download") or b["source"])) for b in cfg}
     used_ids = {b["id"] for b in cfg}
@@ -524,21 +562,32 @@ def auto_register(cfg):
         return cfg
 
     for name in sorted(os.listdir(BOOKS_DIR)):
-        low = name.lower()
-        if name.startswith(".") or name.startswith("~$") or not low.endswith(BOOK_EXT):
+        if name.startswith(".") or name.startswith("~$"):
             continue
         p = os.path.join(BOOKS_DIR, name)
-        if not os.path.isfile(p):
-            continue
         absp = os.path.abspath(p)
+
+        if os.path.isdir(p):
+            inner = [n for n in os.listdir(p)
+                     if not n.startswith((".", "~$")) and n.lower().endswith(BOOK_EXT)]
+            if not inner:
+                continue
+            rel_src = "books/" + name
+            rel_dl = "books/" + name + ".txt"
+            kind = "目录《%s》（%d 个文件）" % (name, len(inner))
+        elif os.path.isfile(p) and name.lower().endswith(BOOK_EXT):
+            rel_src = "books/" + name
+            rel_dl = rel_src if name.lower().endswith((".txt", ".md")) else \
+                "books/" + os.path.splitext(name)[0] + ".txt"
+            kind = "文件 books/" + name
+        else:
+            continue
+
         if absp in used_src or absp in used_dl:
             continue
 
         title, author = guess_meta(p)
         bid = make_id(name, used_ids)
-        rel_src = "books/" + name
-        rel_dl = rel_src if low.endswith((".txt", ".md")) else \
-            "books/" + os.path.splitext(name)[0] + ".txt"
         cfg.append({
             "id": bid,
             "title": title,
@@ -552,7 +601,7 @@ def auto_register(cfg):
         used_src.add(absp)
         used_dl.add(os.path.abspath(resolve(rel_dl)))
         added += 1
-        print("＋ 自动登记《%s》%s → books/%s" % (title, ("／" + author) if author else "", name))
+        print("＋ 自动登记《%s》%s ← %s" % (title, ("／" + author) if author else "", kind))
 
     if added:
         with open(CONFIG, "w", encoding="utf-8", newline="\n") as f:
@@ -592,10 +641,11 @@ def build_book(b, write_files=True):
     txt_url = ""
     download = b.get("download") or b["source"]
     dl_path = resolve(download)
+    gen_text = os.path.isdir(src) or src.lower().endswith((".epub", ".docx"))
     if os.path.abspath(dl_path) != os.path.abspath(src):
         os.makedirs(os.path.dirname(dl_path) or ROOT, exist_ok=True)
-        if src.lower().endswith(".epub"):
-            # EPUB 直接导出为纯文本，便于“下载 TXT”
+        if gen_text:
+            # epub / docx / 目录 都统一导出成纯文本，便于“下载 TXT”
             with open(dl_path, "w", encoding="utf-8", newline="\n") as d:
                 d.write(chapter_plain_text(chapters))
         else:
