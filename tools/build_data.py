@@ -471,6 +471,7 @@ def resolve(path):
 
 
 def load_config():
+    """读取书单；源文件已不存在的条目会被自动下线（书单、章节数据、下载副本一并清掉）。"""
     if not os.path.exists(CONFIG):
         raise BookError("找不到书单配置：%s" % CONFIG)
     with open(CONFIG, encoding="utf-8-sig") as f:
@@ -478,7 +479,7 @@ def load_config():
     if not isinstance(cfg, list):
         raise BookError("books/books.json 需要是一个数组，例如 [ { \"id\": \"...\", ... } ]")
 
-    seen = set()
+    seen, kept = set(), []
     for i, b in enumerate(cfg):
         for field in ("id", "title", "source"):
             if not b.get(field):
@@ -488,9 +489,39 @@ def load_config():
         if b["id"] in seen:
             raise BookError("id 重复：%s" % b["id"])
         seen.add(b["id"])
+
         if not os.path.exists(resolve(b["source"])):
-            raise BookError("《%s》的原文不存在：%s" % (b["title"], b["source"]))
-    return cfg
+            print("－ 下线《%s》：原文已不存在（%s）" % (b["title"], b["source"]))
+            drop_book_data(b)
+            continue
+        kept.append(b)
+
+    if len(kept) != len(cfg):
+        save_config(kept)
+    return kept
+
+
+def save_config(cfg):
+    with open(CONFIG, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+def drop_book_data(b):
+    """删掉这本书的章节数据目录与自动生成的下载副本。"""
+    import shutil
+    out_rel = b.get("dir") or os.path.join("data", b["id"], "c")
+    data_dir = os.path.join(ROOT, "data", b["id"])
+    if os.path.isdir(data_dir) and os.path.abspath(data_dir) != os.path.abspath(os.path.join(ROOT, "data")):
+        shutil.rmtree(data_dir, ignore_errors=True)
+    if out_rel and os.path.isdir(resolve(out_rel)):
+        shutil.rmtree(resolve(out_rel), ignore_errors=True)
+    dl = b.get("download") or ""
+    if dl and dl != b.get("source"):
+        p = resolve(dl)
+        if os.path.isfile(p) and os.path.abspath(p).startswith(os.path.join(ROOT, "books")):
+            os.remove(p)
+            print("  已删除下载副本：%s" % dl)
 
 
 # ---------------------------------------------------------------- 自动上架
@@ -604,9 +635,7 @@ def auto_register(cfg):
         print("＋ 自动登记《%s》%s ← %s" % (title, ("／" + author) if author else "", kind))
 
     if added:
-        with open(CONFIG, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-            f.write("\n")
+        save_config(cfg)
         print("已把 %d 本新书写回 books/books.json（书名/作者可手改）" % added)
     return cfg
 
