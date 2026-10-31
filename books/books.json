@@ -82,5 +82,16 @@
     "intro": "普通高中生路明非收到一封来自卡塞尔学院的录取通知书，从此走进龙与混血种的世界。本版为全套七册：前传、Ⅰ火之晨曦、Ⅱ悼亡者之瞳、Ⅲ黑月之潮、Ⅳ奥丁之渊。",
     "source": "books/long-zu.epub",
     "download": "books/long-zu.txt"
+  },
+  {
+    "id": "bk-a184ca",
+    "title": "连载自测",
+    "author": "测试",
+    "tags": [
+      "自动上架"
+    ],
+    "note": "自动上架 · 2026-10-31",
+    "source": "books/连载自测",
+    "download": "books/连载自测.txt"
   }
 ]

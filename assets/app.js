@@ -7,7 +7,7 @@
   'use strict';
 
   /* 版本号：每次发布与 index.html 里的 window.MD_BUILD 保持一致 */
-  const BUILD = '20261031-121512';
+  const BUILD = '20261031-041932';
 
   /* ---------------------------------------------------------------- 基础工具 */
   const $ = (sel, root) => (root || document).querySelector(sel);
